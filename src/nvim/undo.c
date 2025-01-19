@@ -253,12 +253,12 @@ int u_save_cursor(void)
 /// "top" may be 0 and bot may be curbuf->b_ml.ml_line_count + 1.
 /// Careful: may trigger autocommands that reload the buffer.
 /// Returns FAIL when lines could not be saved, OK otherwise.
-int u_save(linenr_T top, linenr_T bot)
+int u_save_internal(pos_T uh_cursor, linenr_T top, linenr_T bot)
 {
-  return u_save_buf(curbuf, top, bot);
+  return u_save_buf(curbuf, uh_cursor, top, bot);
 }
 
-int u_save_buf(buf_T *buf, linenr_T top, linenr_T bot)
+int u_save_buf(buf_T *buf, pos_T uh_cursor, linenr_T top, linenr_T bot)
 {
   if (top >= bot || bot > (buf->b_ml.ml_line_count + 1)) {
     return FAIL;        // rely on caller to do error messages
@@ -268,7 +268,13 @@ int u_save_buf(buf_T *buf, linenr_T top, linenr_T bot)
     u_saveline(buf, top + 1);
   }
 
-  return u_savecommon(buf, top, bot, 0, false);
+  return u_savecommon(buf, uh_cursor, top, bot, 0, false);
+}
+
+// modded:
+int u_savesub_internal(pos_T uh_cursor, linenr_T lnum)
+{
+  return u_savecommon(curbuf, uh_cursor, lnum - 1, lnum + 1, lnum + 1, false);
 }
 
 /// Save the line "lnum" (used by ":s" and "~" command).
@@ -277,7 +283,7 @@ int u_save_buf(buf_T *buf, linenr_T top, linenr_T bot)
 /// Returns FAIL when lines could not be saved, OK otherwise.
 int u_savesub(linenr_T lnum)
 {
-  return u_savecommon(curbuf, lnum - 1, lnum + 1, lnum + 1, false);
+  return u_savecommon(curbuf, curwin->w_cursor, lnum - 1, lnum + 1, lnum + 1, false);
 }
 
 /// A new line is inserted before line "lnum" (used by :s command).
@@ -286,7 +292,17 @@ int u_savesub(linenr_T lnum)
 /// Returns FAIL when lines could not be saved, OK otherwise.
 int u_inssub(linenr_T lnum)
 {
-  return u_savecommon(curbuf, lnum - 1, lnum, lnum + 1, false);
+  return u_savecommon(curbuf, curwin->w_cursor, lnum - 1, lnum, lnum + 1, false);
+}
+
+int u_savedel_2(pos_T uh_cursor, linenr_T lnum, linenr_T nlines)
+{
+  pos_T old = curwin->w_cursor;
+  curwin->w_cursor = uh_cursor;
+
+  int ans = u_savecommon(curbuf, curwin->w_cursor, lnum - 1, lnum + nlines, nlines == curbuf->b_ml.ml_line_count ? 2 : lnum, false);
+  curwin->w_cursor = old;
+  return ans;
 }
 
 /// Save the lines "lnum" - "lnum" + nlines (used by delete command).
@@ -296,7 +312,7 @@ int u_inssub(linenr_T lnum)
 /// Returns FAIL when lines could not be saved, OK otherwise.
 int u_savedel(linenr_T lnum, linenr_T nlines)
 {
-  return u_savecommon(curbuf, lnum - 1, lnum + nlines,
+  return u_savecommon(curbuf, curwin->w_cursor, lnum - 1, lnum + nlines,
                       nlines == curbuf->b_ml.ml_line_count ? 2 : lnum, false);
 }
 
@@ -351,7 +367,7 @@ static inline void zero_fmark_additional_data(fmark_T *fmarks)
 /// "reload" is true when saving for a buffer reload.
 /// Careful: may trigger autocommands that reload the buffer.
 /// Returns FAIL when lines could not be saved, OK otherwise.
-int u_savecommon(buf_T *buf, linenr_T top, linenr_T bot, linenr_T newbot, bool reload)
+int u_savecommon(buf_T *buf, pos_T uh_cursor, linenr_T top, linenr_T bot, linenr_T newbot, bool reload)
 {
   if (!reload) {
     // When making changes is not allowed return FAIL.  It's a crude way
@@ -473,7 +489,13 @@ int u_savecommon(buf_T *buf, linenr_T top, linenr_T bot, linenr_T newbot, bool r
     uhp->uh_walk = 0;
     uhp->uh_entry = NULL;
     uhp->uh_getbot_entry = NULL;
-    uhp->uh_cursor = curwin->w_cursor;          // save cursor pos. for undo
+
+    // modded:
+    uhp->uh_cursor = uh_cursor;
+
+    // vanilla:
+    // uhp->uh_cursor = curwin->w_cursor;          // save cursor pos. for undo
+
     if (virtual_active(curwin) && curwin->w_cursor.coladd > 0) {
       uhp->uh_cursor_vcol = getviscol();
     } else {
@@ -3034,7 +3056,7 @@ void u_undoline(void)
   }
 
   // first save the line for the 'u' command
-  if (u_savecommon(curbuf, curbuf->b_u_line_lnum - 1,
+  if (u_savecommon(curbuf, curwin->w_cursor, curbuf->b_u_line_lnum - 1,
                    curbuf->b_u_line_lnum + 1, 0, false) == FAIL) {
     return;
   }
@@ -3201,7 +3223,7 @@ u_header_T *u_force_get_undo_header(buf_T *buf)
   // Create the first undo header for the buffer
   if (!uhp) {
     // Args are tricky: this means replace empty range by empty range..
-    u_savecommon(buf, 0, 1, 1, true);
+    u_savecommon(buf, curwin->w_cursor, 0, 1, 1, true);
 
     uhp = buf->b_u_curhead;
     if (!uhp) {

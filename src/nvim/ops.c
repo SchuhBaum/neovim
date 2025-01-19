@@ -731,16 +731,30 @@ void op_reindent(oparg_T *oap, Indenter how)
   linenr_T last_changed = 0;
   linenr_T start_lnum = curwin->w_cursor.lnum;
 
+  // modded:
+  // linenr_T old_lnum = curwin->w_old_cursor.lnum;
+  // linenr_T old_col  = curwin->w_old_cursor.col;
+
   // Don't even try when 'modifiable' is off.
   if (!MODIFIABLE(curbuf)) {
     emsg(_(e_modifiable));
     return;
   }
 
+  // modded:
+  // Save the cursor position for undo where it was before getting moved around.
+  // pos_T cur_pos = curwin->w_cursor;
+  // curwin->w_cursor = curwin->w_old_cursor;
+  // curwin->w_cursor.lnum = old_lnum;
+  // curwin->w_cursor.col  = old_col;
+
   // Save for undo.  Do this once for all lines, much faster than doing this
   // for each line separately, especially when undoing.
-  if (u_savecommon(curbuf, start_lnum - 1, start_lnum + oap->line_count,
+  if (u_savecommon(curbuf, curwin->w_old_cursor, start_lnum - 1, start_lnum + oap->line_count,
                    start_lnum + oap->line_count, false) == OK) {
+    // modded:
+    // curwin->w_cursor = cur_pos;
+
     int amount;
     for (i = oap->line_count - 1; i >= 0 && !got_int; i--) {
       // it's a slow thing to do, so give feedback so there's no worry
@@ -762,12 +776,17 @@ void op_reindent(oparg_T *oap, Indenter how)
         } else {
           amount = how();                     // get the indent for this line
         }
+
         if (amount >= 0 && set_indent(amount, 0)) {
           // did change the indent, call changed_lines() later
           if (first_changed == 0) {
             first_changed = curwin->w_cursor.lnum;
           }
           last_changed = curwin->w_cursor.lnum;
+
+          // modded:
+          // Not needed anymore. This is done in set_indent() instead.
+          // if (start_lnum + oap->line_count-1 - i == old_lnum) old_col += amount;
         }
       }
       curwin->w_cursor.lnum++;
@@ -776,8 +795,11 @@ void op_reindent(oparg_T *oap, Indenter how)
   }
 
   // put cursor on first non-blank of indented line
-  curwin->w_cursor.lnum = start_lnum;
-  beginline(BL_SOL | BL_FIX);
+  // curwin->w_cursor.lnum = start_lnum;
+  // beginline(BL_SOL | BL_FIX);
+
+  // modded:
+  curwin->w_cursor = curwin->w_old_cursor;
 
   // Mark changed lines so that they will be redrawn.  When Visual
   // highlighting was present, need to continue until the last line.  When
@@ -1646,7 +1668,10 @@ int op_delete(oparg_T *oap)
 
   // block mode delete
   if (oap->motion_type == kMTBlockWise) {
-    if (u_save((linenr_T)(oap->start.lnum - 1),
+    // modded:
+    // Hold the cursor steady when undoing / redoing as well. Separate saving
+    // the buffer state and saving the cursor position.
+    if (u_save_internal(curwin->w_old_cursor, (linenr_T)(oap->start.lnum - 1),
                (linenr_T)(oap->end.lnum + 1)) == FAIL) {
       return FAIL;
     }
@@ -1689,6 +1714,10 @@ int op_delete(oparg_T *oap)
     changed_lines(curbuf, curwin->w_cursor.lnum, curwin->w_cursor.col,
                   oap->end.lnum + 1, 0, true);
     oap->line_count = 0;  // no lines deleted
+
+    // modded:
+    if (oap->op_type == OP_DELETE)
+      curwin->w_cursor = curwin->w_old_cursor;
   } else if (oap->motion_type == kMTLineWise) {
     if (oap->op_type == OP_CHANGE) {
       // Delete the lines except the first one.  Temporarily move the
@@ -1717,7 +1746,32 @@ int op_delete(oparg_T *oap)
         u_clearline(curbuf);  // "U" command not possible after "2cc"
       }
     } else {
-      del_lines(oap->line_count, true);
+      // modded:
+      // WLOG("line count %d %d", curbuf->b_ml.ml_line_count, curwin->w_cursor.lnum);
+      if (oap->is_VIsual) {
+        // We need to save the cursor at a different position. Otherwise, it
+        // will jump to the start of the line when undoing.
+        pos_T uh_cursor = curwin->w_cursor;
+        getvpos(curwin, &uh_cursor, curwin->w_old_cursor.col);
+
+        del_lines_2(uh_cursor, curwin->w_cursor.lnum, oap->line_count, true);
+
+      } else if (oap->line_count > 1 && oap->dir == BACKWARD && curwin->w_cursor.lnum > 1 && curwin->w_cursor.lnum < curbuf->b_ml.ml_line_count-1) {
+        // The cursor position gets saved in del_lines().
+        // I want it to move up by one line when deleting upwards. Because you can repeat deleting
+        // upwards the same way you can when deleting downwards. It feels more consistent.
+        pos_T uh_cursor = curwin->w_cursor;
+        uh_cursor.lnum--;
+        getvpos(curwin, &uh_cursor, curwin->w_old_cursor.col);
+
+        del_lines_2(uh_cursor, curwin->w_cursor.lnum, oap->line_count, true);
+        curwin->w_cursor.lnum--;
+
+      } else {
+        // vanilla:
+        del_lines(oap->line_count, true);
+      }
+
       beginline(BL_WHITE | BL_FIX);
       u_clearline(curbuf);  //  "U" command not possible after "dd"
     }
@@ -2133,7 +2187,7 @@ void op_tilde(oparg_T *oap)
   struct block_def bd;
   bool did_change = false;
 
-  if (u_save((linenr_T)(oap->start.lnum - 1),
+  if (u_save_internal(curwin->w_old_cursor, (linenr_T)(oap->start.lnum - 1),
              (linenr_T)(oap->end.lnum + 1)) == FAIL) {
     return;
   }
@@ -2473,7 +2527,18 @@ void op_insert(oparg_T *oap, int count1)
         block_insert(oap, ins_text, (size_t)ins_len, (oap->op_type == OP_INSERT), &bd);
       }
 
-      curwin->w_cursor.col = oap->start.col;
+      // vanilla:
+      // curwin->w_cursor.col = oap->start.col;
+
+      // modded:
+      // The w_old_cursor is at the position where you left off in block mode.
+      // It did not update in insert mode. (TODO??)
+      // But the w_cursor is at the right position anyways.
+      // The problem is that redoing does not know where to put the cursor
+      // correctly. Undoing seems to move the cursor backwards because the
+      // position is deleted as well.
+      // curwin->w_cursor = curwin->w_old_cursor;
+
       check_cursor(curwin);
       xfree(ins_text);
     }
@@ -2655,6 +2720,11 @@ bool op_yank(oparg_T *oap, bool message)
 
 static void op_yank_reg(oparg_T *oap, bool message, yankreg_T *reg, bool append)
 {
+  // modded:
+  // Take the motion type from the register when using the function op_put().
+  // oap->last_yank_motion_type = oap->motion_type;
+  oap->last_yank_line_count  = oap->line_count;
+
   yankreg_T newreg;  // new yank register when appending
   MotionType yank_type = oap->motion_type;
   size_t yanklines = (size_t)oap->line_count;
@@ -5802,6 +5872,8 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
 
   pos_T old_cursor = curwin->w_cursor;
 
+  oap->is_VIsual = VIsual_active;
+
   // If an operation is pending, handle it...
   if ((finish_op
        || VIsual_active)
@@ -5815,7 +5887,7 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
 
     // Avoid a problem with unwanted linebreaks in block mode
     reset_lbr();
-    oap->is_VIsual = VIsual_active;
+    // oap->is_VIsual = VIsual_active;
     if (oap->motion_force == 'V') {
       oap->motion_type = kMTLineWise;
     } else if (oap->motion_force == 'v') {
@@ -6196,6 +6268,7 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
         CancelRedo();
       } else {
         op_delete(oap);
+
         // save cursor line for undo if it wasn't saved yet
         if (oap->motion_type == kMTLineWise
             && has_format_option(FO_AUTO)
@@ -6291,6 +6364,15 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
         op_tilde(oap);
       }
       check_cursor_col(curwin);
+
+      // modded:
+      // TODO saving the old cursor in the function op_tilde() for undoing and
+      // settings it here is linked; maybe I should investigate if I need to put
+      // them together in some place;
+      // maybe like this: save the cursor; remember the saved cursor position;
+      // set the current cursor after the operation to that position for
+      // consistency;
+      curwin->w_cursor = curwin->w_old_cursor;
       break;
 
     case OP_FORMAT:
@@ -6316,6 +6398,14 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
       restore_lbr(lbr_saved);
       // call 'operatorfunc'
       op_function(oap);
+
+      // modded:
+      // Change the position before it is saved. TODO: figure out where that
+      // happens.
+      //
+      // There is a bug where you call gcaf (comment all function) where it
+      // still moves when you undo the operation. TODO
+      curwin->w_cursor = curwin->w_old_cursor;
 
       // Restore the info for redoing Visual mode, the function may
       // invoke another operator and unintentionally change it.
@@ -6425,7 +6515,31 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
     } else {
       curwin->w_cursor = old_cursor;
     }
-    clearop(oap);
+
+    // modded:
+    if (!empty_region_error) {
+      if      (oap->op_type == OP_YANK)    curwin->w_cursor = curwin->w_old_cursor;
+      // TODO: check again; currently this is done in the function op_reindent();
+      // else if (oap->op_type == OP_INDENT) curwin->w_cursor = curwin->w_old_cursor;
+      // else if (oap->op_type == OP_FUNCTION) curwin->w_cursor = curwin->w_old_cursor;
+    }
+
+    // TODO:
+    // // We don't want to use VIsual_active because it gets changed during this function call.
+    // if (oap->is_VIsual) {
+    //   // if (oap->op_type == OP_YANK)    curwin->w_cursor = curbuf->b_visual.vi_end;
+    //   if (oap->op_type == OP_YANK) {
+    //     curwin->w_cursor = curwin->w_old_cursor;
+    //   }
+    // } else if (finish_op && !empty_region_error) {
+    //   if (oap->op_type == OP_YANK) {
+    //     // if (oap->dir == 1)            curwin->w_cursor = oap->start;
+    //     // else                          curwin->w_cursor = oap->end;
+    //     curwin->w_cursor = curwin->w_old_cursor;
+    //   }
+    // }
+
+    clearop(oap);          // Resets op_type to OP_NOP.
     motion_force = NUL;
   }
   restore_lbr(lbr_saved);

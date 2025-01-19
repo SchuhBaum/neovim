@@ -1053,6 +1053,9 @@ struct window_S {
 
   pos_T w_cursor;                   ///< cursor position in buffer
 
+  // modded:
+  pos_T w_old_cursor;
+
   colnr_T w_curswant;               ///< Column we want to be at.  This is
                                     ///< used to try to stay in the same column
                                     ///< for up/down cursor motions.

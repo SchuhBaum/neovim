@@ -124,6 +124,12 @@ static inline void normal_state_init(NormalState *s)
   memset(s, 0, sizeof(NormalState));
   s->state.check = normal_check;
   s->state.execute = normal_execute;
+
+  // modded:
+  // Not sure how I want to approach this. When you start the program, then you
+  // don't have access to this information anymore. You would need to infer it
+  // by looking at the register content and counting line breaks.
+  s->oa.last_yank_motion_type = -1;
 }
 
 // nv_*(): functions called to handle Normal and Visual mode commands.
@@ -1002,6 +1008,60 @@ normal_end:
     set_reg_var(get_default_register_name());
   }
 
+  // START modded
+
+  // Visual mode is not a mode but a global variable. It can be used by any
+  // function. Watch for side effects.
+  //
+  // There are two options.
+  // Either something uses operators (calls nv_operator). This can happen even
+  // when `O-Pending` is not shown explicitly. Examples are yank or any kind and
+  // delete.
+  // Besides that you have pure commands (like nv_put). When you use 'p' or 'P'
+  // then do_pending_operator() is not called.
+  // Handle the pure commands here. Handle the operators in do_pending_operator.
+  // At this point, we don't access to op_type anymore.
+
+  // lnum starts at 1 and col starts at 0
+  // WLOG("TEMP: cursor %d %d.", curwin->w_cursor.lnum, curwin->w_cursor.col);
+
+  // oparg_T *oap = &s->oa;
+  if (!s->oa.is_VIsual && !finish_op) {
+    //
+    // Handle other nv commands besides nv_operator.
+    //
+
+    int ch = s->ca.cmdchar;
+    if (ch == 'p') {
+      // The cursor gets "pushed down" when using 'P'. It gets placed after the pasted text.
+      curwin->w_cursor = s->old_pos;
+    } else if (ch == 'P') {
+      // WLOG("TEMP: (%d %d)", curbuf->b_op_end.lnum, curbuf->b_op_end.col);
+
+      if (s->oa.last_yank_motion_type == kMTLineWise) {
+        // WLOG("TEMP: (%d %d)", s->oa.start.lnum, s->oa.start.col);
+        // WLOG("TEMP: (%d %d)", s->oa.end.lnum, s->oa.end.col);
+        // WLOG("TEMP: (%d %d)", s->old_pos.lnum, s->old_pos.col);
+        // WLOG("TEMP: (%d %d)", curwin->w_cursor.lnum, curwin->w_cursor.col);
+
+        // curwin->w_cursor.lnum = s->old_pos.lnum+1;
+        curwin->w_cursor.lnum = s->old_pos.lnum + s->oa.last_yank_line_count;
+        curwin->w_cursor.col  = s->old_pos.col;
+
+      } else if (s->oa.last_yank_motion_type == kMTCharWise) {
+        // WLOG("whhhyy");
+        // No need to get the line length. This should always be a valid
+        // position. Because you just keep the cursor steady.
+        // colnr_T line_len = get_cursor_line_len();
+        ++curwin->w_cursor.col;
+      } else {
+        // WLOG("block");
+      }
+    }
+  }
+
+  // END modded
+
   const bool prev_finish_op = finish_op;
   if (s->oa.op_type == OP_NOP) {
     // Reset finish_op, in case it was set
@@ -1244,6 +1304,28 @@ static int normal_execute(VimState *state, int key)
   (nv_cmds[s->idx].cmd_func)(&s->ca);
 
 finish:
+
+  // TODO: Just move it down to oa. s can access it there in any case. Or maybe not. Some lower
+  // functions only have access to oap and could change it. The higher old_pos would be more stable.
+  // TODO: Rename to something better.
+  curwin->w_old_cursor = s->old_pos;
+
+  if (s->old_pos.lnum < curwin->w_cursor.lnum) {
+    s->oa.dir = 1;
+  } else if (s->old_pos.lnum > curwin->w_cursor.lnum) {
+    s->oa.dir = -1;
+  // TODO: do I need this?
+  // } else {
+  //   s->oa.dir = 0;
+  }
+
+  // if (s->oa.op_type == OP_DELETE) {
+  //   WLOG("TEMP: lnum %d %d.", curwin->w_cursor.lnum, curwin->w_cursor.col);
+  //   WLOG("TEMP: lnum2 %d %d.", s->old_pos.lnum, s->old_pos.col);
+  //   WLOG("TEMP: lnum3 %d %d.", s->oa.start.lnum, s->oa.start.col);
+  //   WLOG("TEMP: lnum4 %d %d.", s->oa.end.lnum, s->oa.end.col);
+  // }
+
   normal_finish_command(s);
   return 1;
 }
@@ -4413,8 +4495,15 @@ static void nv_mark(cmdarg_T *cap)
 /// cmd->arg is BACKWARD for "{" and FORWARD for "}".
 static void nv_findpar(cmdarg_T *cap)
 {
-  cap->oap->motion_type = kMTCharWise;
-  cap->oap->inclusive = false;
+  // TODO: is cap->arg the direction??
+  // What other arg types exist?
+
+  // modded:
+  cap->oap->motion_type = kMTLineWise;
+
+  // cap->oap->motion_type = kMTCharWise;
+  // cap->oap->inclusive = false;
+
   cap->oap->use_reg_one = true;
   curwin->w_set_curswant = true;
   if (!findpar(&cap->oap->inclusive, cap->arg, cap->count1, NUL, false)) {
@@ -4425,6 +4514,12 @@ static void nv_findpar(cmdarg_T *cap)
   curwin->w_cursor.coladd = 0;
   if ((fdo_flags & kOptFdoFlagBlock) && KeyTyped && cap->oap->op_type == OP_NOP) {
     foldOpenCursor();
+  }
+
+  // modded:
+  if (cap->oap->op_type == OP_DELETE) {
+    if      (cap->arg == BACKWARD) ++curwin->w_cursor.lnum;
+    else if (cap->arg == FORWARD)  --curwin->w_cursor.lnum;
   }
 }
 
@@ -6555,7 +6650,18 @@ static void nv_put_opt(cmdarg_T *cap, bool fix_indent)
     // May have been reset in do_put().
     VIsual_active = true;
   }
+
   do_put(cap->oap->regname, savereg, dir, cap->count1, flags);
+
+  // modded:
+  // The motion_type is used to move the cursor appropriately. When you put
+  // something before the cursor then the cursor gets pushed back.
+  // We need to extract that information from the function do_put(). This is a
+  // workaround.
+  yankreg_T *used_reg = savereg;
+  if (used_reg == NULL)
+    used_reg = get_yank_register(cap->oap->regname, YREG_PASTE);
+  cap->oap->last_yank_motion_type = used_reg == NULL ? -1 : used_reg->y_type;
 
   // If a register was saved, free it
   if (savereg != NULL) {

@@ -9,3 +9,7 @@
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "undo.h.generated.h"
 #endif
+
+// modded:
+#define u_save(top, bot) u_save_internal(curwin->w_cursor, top, bot)
+

@@ -4,6 +4,7 @@
 
 #include "nvim/pos_defs.h"
 #include "nvim/types_defs.h"
+#include "nvim/vim_defs.h"
 
 /// Motion types, used for operators and for yank/delete registers.
 ///
@@ -40,6 +41,17 @@ typedef struct {
   int prev_opcount;        ///< ca.opcount saved for K_EVENT
   int prev_count0;         ///< ca.count0 saved for K_EVENT
   bool excl_tr_ws;         ///< exclude trailing whitespace for yank of a block
+
+  // modded:
+  Direction dir;
+
+  // Problem:
+  //     The motion type is not saved. But even like this you need to yank first
+  //     before it can be applied to the operator put. Maybe the operator put
+  //     should figure this out on its own. By lookin at the line if line
+  //     endings exist in the register text or similar.
+  MotionType last_yank_motion_type;
+  linenr_T last_yank_line_count;
 } oparg_T;
 
 /// Arguments for Normal mode commands.

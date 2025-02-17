@@ -4519,10 +4519,10 @@ static void nv_findpar(cmdarg_T *cap)
   }
 
   // modded:
-  if (cap->oap->op_type == OP_DELETE) {
-    if      (cap->arg == BACKWARD) ++curwin->w_cursor.lnum;
-    else if (cap->arg == FORWARD)  --curwin->w_cursor.lnum;
-  }
+  // if (cap->oap->op_type == OP_DELETE) {
+  //   if      (cap->arg == BACKWARD) ++curwin->w_cursor.lnum;
+  //   else if (cap->arg == FORWARD)  --curwin->w_cursor.lnum;
+  // }
 }
 
 /// "u" command: Undo or make lower case.

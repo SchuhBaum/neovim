@@ -4495,14 +4495,16 @@ static void nv_mark(cmdarg_T *cap)
 /// cmd->arg is BACKWARD for "{" and FORWARD for "}".
 static void nv_findpar(cmdarg_T *cap)
 {
-  // TODO: is cap->arg the direction??
-  // What other arg types exist?
-
+  // TODO:
+  //   This has side effects. And I can solve this in the configuration as well.
+  //   I can change the register to be considered linewise if needed. Although,
+  //   this is not perfect right now either. If you copy multiple lines it will
+  //   still paste them as block.
   // modded:
-  cap->oap->motion_type = kMTLineWise;
+  // cap->oap->motion_type = kMTLineWise;
 
-  // cap->oap->motion_type = kMTCharWise;
-  // cap->oap->inclusive = false;
+  cap->oap->motion_type = kMTCharWise;
+  cap->oap->inclusive = false;
 
   cap->oap->use_reg_one = true;
   curwin->w_set_curswant = true;

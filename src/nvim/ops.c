@@ -6524,6 +6524,8 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
       curwin->w_cursor = old_cursor;
     }
 
+    // TODO:
+    //   I should move this to the switch branch that handles yank.
     // modded:
     if (!empty_region_error) {
       if      (oap->op_type == OP_YANK)    curwin->w_cursor = curwin->w_old_cursor;

@@ -1132,6 +1132,9 @@ static int normal_execute(VimState *state, int key)
   s->old_col = curwin->w_curswant;
   s->c = key;
 
+  // modded:
+  s->oa.is_findpar_active = false;
+
   LANGMAP_ADJUST(s->c, get_real_state() != MODE_SELECT);
 
   // If a mapping was started in Visual or Select mode, remember the length
@@ -4519,6 +4522,9 @@ static void nv_findpar(cmdarg_T *cap)
   }
 
   // modded:
+  cap->oap->is_findpar_active = true;
+  // This is ugly. But how am I supposed to know when deleting that I came from
+  // here? The motion by that point is linewise and not charwise anymore.
   // if (cap->oap->op_type == OP_DELETE) {
   //   if      (cap->arg == BACKWARD) ++curwin->w_cursor.lnum;
   //   else if (cap->arg == FORWARD)  --curwin->w_cursor.lnum;

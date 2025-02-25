@@ -295,14 +295,9 @@ int u_inssub(linenr_T lnum)
   return u_savecommon(curbuf, curwin->w_cursor, lnum - 1, lnum, lnum + 1, false);
 }
 
-int u_savedel_2(pos_T uh_cursor, linenr_T lnum, linenr_T nlines)
+int u_savedel_internal(pos_T uh_cursor, linenr_T lnum, linenr_T nlines)
 {
-  pos_T old = curwin->w_cursor;
-  curwin->w_cursor = uh_cursor;
-
-  int ans = u_savecommon(curbuf, curwin->w_cursor, lnum - 1, lnum + nlines, nlines == curbuf->b_ml.ml_line_count ? 2 : lnum, false);
-  curwin->w_cursor = old;
-  return ans;
+  return u_savecommon(curbuf, uh_cursor, lnum - 1, lnum + nlines, nlines == curbuf->b_ml.ml_line_count ? 2 : lnum, false);
 }
 
 /// Save the lines "lnum" - "lnum" + nlines (used by delete command).
@@ -2272,6 +2267,9 @@ target_zero:
 /// @param do_buf_event If `true`, send buffer updates.
 static void u_undoredo(bool undo, bool do_buf_event)
 {
+  // modded:
+  pos_T redo_cursor = curwin->w_cursor;
+
   char **newarray = NULL;
   linenr_T newlnum = MAXLNUM;
   u_entry_T *nuep;
@@ -2538,6 +2536,16 @@ static void u_undoredo(bool undo, bool do_buf_event)
 #ifdef U_DEBUG
   u_check(false);
 #endif
+
+  // modded:
+  // The implementation should be much simpler because the idea is simple.
+  // Restore the state of the buffer and then place the cursor back to where it
+  // was. If the state is restored, the cursor aways has space and does not need
+  // to be pushed around. But right now, the cursor is placed right away and
+  // then pushed around afterwards for some cases.
+  curwin->w_cursor   = curhead->uh_cursor;
+  curhead->uh_cursor = redo_cursor;
+
 }
 
 /// If we deleted or added lines, report the number of less/more lines.

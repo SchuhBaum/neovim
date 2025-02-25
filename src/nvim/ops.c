@@ -1759,7 +1759,7 @@ int op_delete(oparg_T *oap)
 
         del_lines_2(uh_cursor, curwin->w_cursor.lnum, oap->line_count, true);
 
-      } else if (oap->line_count > 1 && oap->dir == BACKWARD && oap->start.lnum > 1) {
+      } else if (!oap->is_findpar_active && oap->line_count > 1 && oap->dir == BACKWARD && oap->start.lnum > 1) {
         // The cursor position gets saved in del_lines().
         // I want it to move up by one line when deleting upwards. Because you can repeat deleting
         // upwards the same way you can when deleting downwards. It feels more consistent.
@@ -1767,12 +1767,13 @@ int op_delete(oparg_T *oap)
         uh_cursor.lnum--;
         getvpos(curwin, &uh_cursor, curwin->w_old_cursor.col);
 
+        linenr_T line_count = curbuf->b_ml.ml_line_count;
         del_lines_2(uh_cursor, curwin->w_cursor.lnum, oap->line_count, true);
 
         // If we deleted the last line then the cursor is pushed upwards
         // automatically. In that case, we only need to save the modified
         // position uh_cursor.
-        if (oap->end.lnum < curbuf->b_ml.ml_line_count)
+        if (oap->end.lnum < line_count)
           curwin->w_cursor.lnum--;
 
       } else {

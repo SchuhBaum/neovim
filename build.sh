@@ -4,20 +4,19 @@
 # rm -r build/
 # rm -r .deps/
 
-if [ "$1" == "-clean" ]; then
-  rm -r build/
-  rm -r .deps/
-elif [ "$2" == "-clean" ]; then
-  rm -r build/
-  rm -r .deps/
-fi
+build_type="RelWithDebInfo"
 
-build_type="Release"
-if [ "$1" == "-debug" ]; then
-  build_type="RelWithDebInfo"
-elif [ "$2" == "-debug" ]; then
-  build_type="RelWithDebInfo"
-fi
+for arg in "$@"
+do
+  if [ "$arg" == "--clean" ]; then
+    rm -r build/
+    rm -r .deps/
+  elif [ "$arg" == "--debug" ]; then
+    build_type="Debug"
+  elif [ "$arg" == "--release" ]; then
+    build_type="Release"
+  fi
+done
 
 # bundled_off="-DUSE_BUNDLED=OFF -DUSE_BUNDLED_LIBUV=ON -DUSE_BUNDLED_LUV=ON -DUSE_BUNDLED_TS=ON -DUSE_BUNDLED_UTF8PROC=ON"
 # make CMAKE_EXTRA_FLAGS="-DCMAKE_C_FLAGS=-no-pie $bundled_off" CMAKE_INSTALL_PREFIX=$HOME/nvim CMAKE_BUILD_TYPE=$build_type && VIMRUNTIME=runtime ./build/bin/nvim ./file.c

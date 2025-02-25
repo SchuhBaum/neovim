@@ -1972,7 +1972,7 @@ void del_lines_2(pos_T uh_cursor, linenr_T first, linenr_T nlines, bool undo)
   }
 
   // save the deleted lines for undo
-  if (undo && u_savedel_2(uh_cursor, curwin->w_cursor.lnum, nlines) == FAIL) {
+  if (undo && u_savedel_internal(uh_cursor, curwin->w_cursor.lnum, nlines) == FAIL) {
     return;
   }
 

@@ -45,6 +45,11 @@ typedef struct {
   // modded:
   Direction dir;
 
+  // The function nv_findpar moves charwise but the operation afterwards is
+  // linewise. The modifications to the linewise delete operation need to be
+  // disabled when this is active.
+  bool is_findpar_active;
+
   // Problem:
   //     The motion type is not saved. But even like this you need to yank first
   //     before it can be applied to the operator put. Maybe the operator put

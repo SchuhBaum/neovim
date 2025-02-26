@@ -2729,11 +2729,6 @@ bool op_yank(oparg_T *oap, bool message)
 
 static void op_yank_reg(oparg_T *oap, bool message, yankreg_T *reg, bool append)
 {
-  // modded:
-  // Take the motion type from the register when using the function op_put().
-  // oap->last_yank_motion_type = oap->motion_type;
-  oap->last_yank_line_count  = oap->line_count;
-
   yankreg_T newreg;  // new yank register when appending
   MotionType yank_type = oap->motion_type;
   size_t yanklines = (size_t)oap->line_count;

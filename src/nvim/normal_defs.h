@@ -55,8 +55,8 @@ typedef struct {
   //     before it can be applied to the operator put. Maybe the operator put
   //     should figure this out on its own. By lookin at the line if line
   //     endings exist in the register text or similar.
-  MotionType last_yank_motion_type;
-  linenr_T last_yank_line_count;
+  MotionType pasted_text_motion_type;
+  size_t pasted_text_line_count;
 } oparg_T;
 
 /// Arguments for Normal mode commands.

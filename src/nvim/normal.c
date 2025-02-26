@@ -129,7 +129,7 @@ static inline void normal_state_init(NormalState *s)
   // Not sure how I want to approach this. When you start the program, then you
   // don't have access to this information anymore. You would need to infer it
   // by looking at the register content and counting line breaks.
-  s->oa.last_yank_motion_type = -1;
+  s->oa.pasted_text_motion_type = -1;
 }
 
 // nv_*(): functions called to handle Normal and Visual mode commands.
@@ -1033,29 +1033,34 @@ normal_end:
 
     int ch = s->ca.cmdchar;
     if (ch == 'p') {
-      // The cursor gets "pushed down" when using 'P'. It gets placed after the pasted text.
       curwin->w_cursor = s->old_pos;
     } else if (ch == 'P') {
+      //
+      // The cursor gets "pushed down" when using 'P'. It gets placed after the
+      // pasted text.
+      //
+
       // WLOG("TEMP: (%d %d)", curbuf->b_op_end.lnum, curbuf->b_op_end.col);
 
-      if (s->oa.last_yank_motion_type == kMTLineWise) {
-        // WLOG("TEMP: (%d %d)", s->oa.start.lnum, s->oa.start.col);
-        // WLOG("TEMP: (%d %d)", s->oa.end.lnum, s->oa.end.col);
-        // WLOG("TEMP: (%d %d)", s->old_pos.lnum, s->old_pos.col);
-        // WLOG("TEMP: (%d %d)", curwin->w_cursor.lnum, curwin->w_cursor.col);
+      if (s->oa.pasted_text_motion_type == kMTLineWise) {
+        //
+        // The markers get pushed down by default. An alternative is to set a
+        // marker and jump back after the operation is completed.
+        //
 
-        // curwin->w_cursor.lnum = s->old_pos.lnum+1;
-        curwin->w_cursor.lnum = s->old_pos.lnum + s->oa.last_yank_line_count;
+        curwin->w_cursor.lnum = s->old_pos.lnum + s->oa.pasted_text_line_count;
         curwin->w_cursor.col  = s->old_pos.col;
 
-      } else if (s->oa.last_yank_motion_type == kMTCharWise) {
-        // WLOG("whhhyy");
+      } else if (s->oa.pasted_text_motion_type == kMTCharWise) {
         // No need to get the line length. This should always be a valid
         // position. Because you just keep the cursor steady.
         // colnr_T line_len = get_cursor_line_len();
+
+        // Vanilla does almost what we want. Just increase the column by one.
         ++curwin->w_cursor.col;
+
       } else {
-        // WLOG("block");
+        // WLOG("blockwise");
       }
     }
   }
@@ -6661,15 +6666,31 @@ static void nv_put_opt(cmdarg_T *cap, bool fix_indent)
 
   do_put(cap->oap->regname, savereg, dir, cap->count1, flags);
 
+  //
+  //
+
   // modded:
   // The motion_type is used to move the cursor appropriately. When you put
   // something before the cursor then the cursor gets pushed back.
   // We need to extract that information from the function do_put(). This is a
   // workaround.
   yankreg_T *used_reg = savereg;
-  if (used_reg == NULL)
+  if (used_reg == NULL) {
     used_reg = get_yank_register(cap->oap->regname, YREG_PASTE);
-  cap->oap->last_yank_motion_type = used_reg == NULL ? -1 : used_reg->y_type;
+  }
+
+  if (used_reg != NULL) {
+    // The variable used_reg->y_array contains all line strings. The variable
+    // y_size is the number of lines that are pasted.
+    cap->oap->pasted_text_line_count = used_reg->y_size * cap->count1;
+    cap->oap->pasted_text_motion_type = used_reg->y_type; // assuming line- or charwise; would blockwise be bad??;
+  } else {
+    cap->oap->pasted_text_motion_type = -1;
+    cap->oap->pasted_text_line_count = 0;
+  }
+
+  //
+  //
 
   // If a register was saved, free it
   if (savereg != NULL) {

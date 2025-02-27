@@ -486,7 +486,8 @@ int u_savecommon(buf_T *buf, pos_T uh_cursor, linenr_T top, linenr_T bot, linenr
     uhp->uh_getbot_entry = NULL;
 
     // modded:
-    uhp->uh_cursor = uh_cursor;
+    uhp->uh_cursor   = uh_cursor;
+    uhp->uh_curswant = curwin->w_curswant;
 
     // vanilla:
     // uhp->uh_cursor = curwin->w_cursor;          // save cursor pos. for undo
@@ -2268,7 +2269,8 @@ target_zero:
 static void u_undoredo(bool undo, bool do_buf_event)
 {
   // modded:
-  pos_T redo_cursor = curwin->w_cursor;
+  pos_T redo_cursor     = curwin->w_cursor;
+  colnr_T redo_curswant = curwin->w_curswant;
 
   char **newarray = NULL;
   linenr_T newlnum = MAXLNUM;
@@ -2543,9 +2545,10 @@ static void u_undoredo(bool undo, bool do_buf_event)
   // was. If the state is restored, the cursor aways has space and does not need
   // to be pushed around. But right now, the cursor is placed right away and
   // then pushed around afterwards for some cases.
-  curwin->w_cursor   = curhead->uh_cursor;
-  curhead->uh_cursor = redo_cursor;
-
+  curwin->w_cursor     = curhead->uh_cursor;
+  curwin->w_curswant   = curhead->uh_curswant;
+  curhead->uh_cursor   = redo_cursor;
+  curhead->uh_curswant = redo_curswant;
 }
 
 /// If we deleted or added lines, report the number of less/more lines.

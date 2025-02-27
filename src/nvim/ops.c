@@ -6250,6 +6250,9 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
     case OP_RSHIFT:
       op_shift(oap, true, oap->is_VIsual ? cap->count1 : 1);
       auto_format(false, true);
+
+      // modded:
+      curwin->w_cursor = curwin->w_old_cursor;
       break;
 
     case OP_JOIN_NS:
@@ -6292,6 +6295,9 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
         restore_lbr(lbr_saved);
         oap->excl_tr_ws = cap->cmdchar == 'z';
         op_yank(oap, !gui_yank);
+
+        // modded:
+        curwin->w_cursor = curwin->w_old_cursor;
       }
       check_cursor_col(curwin);
       break;
@@ -6346,11 +6352,20 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
           } else {
             op_reindent(oap, get_lisp_indent);
           }
+
+          // modded:
+          // The operation op_reindent already restores the cursor position. I
+          // had a case where `=` would still move the cursor to the wrong
+          // position. TODO: Keep an eye on it.
+          // curwin->w_cursor = curwin->w_old_cursor;
           break;
         }
         op_reindent(oap,
                     *curbuf->b_p_inde != NUL ? get_expr_indent
                                              : get_c_indent);
+
+        // modded:
+        // curwin->w_cursor = curwin->w_old_cursor;
         break;
       }
 
@@ -6404,11 +6419,6 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
       op_function(oap);
 
       // modded:
-      // Change the position before it is saved. TODO: figure out where that
-      // happens.
-      //
-      // There is a bug where you call gcaf (comment all function) where it
-      // still moves when you undo the operation. TODO
       curwin->w_cursor = curwin->w_old_cursor;
 
       // Restore the info for redoing Visual mode, the function may
@@ -6519,31 +6529,6 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
     } else {
       curwin->w_cursor = old_cursor;
     }
-
-    // TODO:
-    //   I should move this to the switch branch that handles yank.
-    // modded:
-    if (!empty_region_error) {
-      if      (oap->op_type == OP_YANK)    curwin->w_cursor = curwin->w_old_cursor;
-      // TODO: check again; currently this is done in the function op_reindent();
-      // else if (oap->op_type == OP_INDENT) curwin->w_cursor = curwin->w_old_cursor;
-      // else if (oap->op_type == OP_FUNCTION) curwin->w_cursor = curwin->w_old_cursor;
-    }
-
-    // TODO:
-    // // We don't want to use VIsual_active because it gets changed during this function call.
-    // if (oap->is_VIsual) {
-    //   // if (oap->op_type == OP_YANK)    curwin->w_cursor = curbuf->b_visual.vi_end;
-    //   if (oap->op_type == OP_YANK) {
-    //     curwin->w_cursor = curwin->w_old_cursor;
-    //   }
-    // } else if (finish_op && !empty_region_error) {
-    //   if (oap->op_type == OP_YANK) {
-    //     // if (oap->dir == 1)            curwin->w_cursor = oap->start;
-    //     // else                          curwin->w_cursor = oap->end;
-    //     curwin->w_cursor = curwin->w_old_cursor;
-    //   }
-    // }
 
     clearop(oap);          // Resets op_type to OP_NOP.
     motion_force = NUL;

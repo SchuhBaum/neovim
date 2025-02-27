@@ -65,6 +65,9 @@ struct u_header {
 #ifdef U_DEBUG
   int uh_magic;                   ///< magic number to check allocation
 #endif
+
+  // modded:
+  colnr_T uh_curswant;
 };
 
 /// values for uh_flags

@@ -125,6 +125,10 @@ static inline void normal_state_init(NormalState *s)
   memset(s, 0, sizeof(NormalState));
   s->state.check = normal_check;
   s->state.execute = normal_execute;
+
+  // modded:
+  s->oa.pasted_text_motion_type = -1;
+  s->oa.pasted_text_line_count  =  0;
 }
 
 // nv_*(): functions called to handle Normal and Visual mode commands.
@@ -1002,6 +1006,68 @@ normal_end:
     set_reg_var(get_default_register_name());
   }
 
+  // START modded
+
+  // Visual mode is not a mode but a global variable. It can be used by any
+  // function. Watch for side effects.
+  //
+  // There are two options.
+  // Either something uses operators (calls nv_operator). This can happen even
+  // when `O-Pending` is not shown explicitly. Examples are yank or any kind and
+  // delete.
+  // Besides that you have pure commands (like nv_put). When you use 'p' or 'P'
+  // then do_pending_operator() is not called.
+  // Handle the pure commands here. Handle the operators in do_pending_operator.
+  // At this point, we don't access to op_type anymore.
+
+  // lnum starts at 1 and col starts at 0
+  // WLOG("TEMP: cursor %d %d.", curwin->w_cursor.lnum, curwin->w_cursor.col);
+
+  // oparg_T *oap = &s->oa;
+  if (!s->oa.is_VIsual && !finish_op) {
+    //
+    // Handle other nv commands besides nv_operator.
+    //
+
+    int ch = s->ca.cmdchar;
+    if (ch == 'p') {
+      curwin->w_cursor = s->old_pos;
+    } else if (ch == 'P') {
+      //
+      // The cursor gets "pushed down" when using 'P'. It gets placed after the
+      // pasted text.
+      //
+
+      // WLOG("TEMP: (%d %d)", curbuf->b_op_end.lnum, curbuf->b_op_end.col);
+
+      if (s->oa.pasted_text_motion_type == kMTLineWise) {
+        //
+        // The markers get pushed down by default. An alternative is to set a
+        // marker and jump back after the operation is completed.
+        //
+
+        curwin->w_cursor.lnum = s->old_pos.lnum + s->oa.pasted_text_line_count;
+        curwin->w_cursor.col  = s->old_pos.col;
+
+      } else if (s->oa.pasted_text_motion_type == kMTCharWise) {
+        // No need to get the line length. This should always be a valid
+        // position. Because you just keep the cursor steady.
+        // colnr_T line_len = get_cursor_line_len();
+
+        // Vanilla does almost what we want. Just increase the column by one.
+        ++curwin->w_cursor.col;
+
+      } else {
+        // WLOG("blockwise");
+      }
+
+    } else if (ch == '~') {
+        curwin->w_cursor = s->old_pos;
+    }
+  }
+
+  // END modded
+
   const bool prev_finish_op = finish_op;
   if (s->oa.op_type == OP_NOP) {
     // Reset finish_op, in case it was set
@@ -1071,6 +1137,9 @@ static int normal_execute(VimState *state, int key)
   s->ctrl_w = false;                  // got CTRL-W command
   s->old_col = curwin->w_curswant;
   s->c = key;
+
+  // modded:
+  s->oa.is_findpar_active = false;
 
   LANGMAP_ADJUST(s->c, get_real_state() != MODE_SELECT);
 
@@ -1244,6 +1313,15 @@ static int normal_execute(VimState *state, int key)
   (nv_cmds[s->idx].cmd_func)(&s->ca);
 
 finish:
+
+  // modded:
+  curwin->w_old_cursor = s->old_pos;
+  if (s->old_pos.lnum < curwin->w_cursor.lnum) {
+    s->oa.dir = 1;
+  } else if (s->old_pos.lnum > curwin->w_cursor.lnum) {
+    s->oa.dir = -1;
+  }
+
   normal_finish_command(s);
   return 1;
 }
@@ -4420,8 +4498,17 @@ static void nv_mark(cmdarg_T *cap)
 /// cmd->arg is BACKWARD for "{" and FORWARD for "}".
 static void nv_findpar(cmdarg_T *cap)
 {
+  // TODO:
+  //   This has side effects. And I can solve this in the configuration as well.
+  //   I can change the register to be considered linewise if needed. Although,
+  //   this is not perfect right now either. If you copy multiple lines it will
+  //   still paste them as block.
+  // modded:
+  // cap->oap->motion_type = kMTLineWise;
+
   cap->oap->motion_type = kMTCharWise;
   cap->oap->inclusive = false;
+
   cap->oap->use_reg_one = true;
   curwin->w_set_curswant = true;
   if (!findpar(&cap->oap->inclusive, cap->arg, cap->count1, NUL, false)) {
@@ -4433,6 +4520,15 @@ static void nv_findpar(cmdarg_T *cap)
   if ((fdo_flags & kOptFdoFlagBlock) && KeyTyped && cap->oap->op_type == OP_NOP) {
     foldOpenCursor();
   }
+
+  // modded:
+  cap->oap->is_findpar_active = true;
+  // This is ugly. But how am I supposed to know when deleting that I came from
+  // here? The motion by that point is linewise and not charwise anymore.
+  // if (cap->oap->op_type == OP_DELETE) {
+  //   if      (cap->arg == BACKWARD) ++curwin->w_cursor.lnum;
+  //   else if (cap->arg == FORWARD)  --curwin->w_cursor.lnum;
+  // }
 }
 
 /// "u" command: Undo or make lower case.
@@ -6566,7 +6662,34 @@ static void nv_put_opt(cmdarg_T *cap, bool fix_indent)
     // May have been reset in do_put().
     VIsual_active = true;
   }
+
   do_put(cap->oap->regname, savereg, dir, cap->count1, flags);
+
+  //
+  //
+
+  // modded:
+  // The motion_type is used to move the cursor appropriately. When you put
+  // something before the cursor then the cursor gets pushed back.
+  // We need to extract that information from the function do_put(). This is a
+  // workaround.
+  yankreg_T *used_reg = savereg;
+  if (used_reg == NULL) {
+    used_reg = get_yank_register(cap->oap->regname, YREG_PASTE);
+  }
+
+  if (used_reg != NULL) {
+    // The variable used_reg->y_array contains all line strings. The variable
+    // y_size is the number of lines that are pasted.
+    cap->oap->pasted_text_motion_type = used_reg->y_type; // assuming line- or charwise; would blockwise be bad??;
+    cap->oap->pasted_text_line_count  = used_reg->y_size * cap->count1;
+  } else {
+    cap->oap->pasted_text_motion_type = -1;
+    cap->oap->pasted_text_line_count  =  0;
+  }
+
+  //
+  //
 
   // If a register was saved, free it
   if (savereg != NULL) {

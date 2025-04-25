@@ -2494,7 +2494,7 @@ int do_ecmd(int fnum, char *ffname, char *sfname, exarg_T *eap, linenr_T newlnum
         && (p_ur < 0 || curbuf->b_ml.ml_line_count <= p_ur)) {
       // Sync first so that this is a separate undo-able action.
       u_sync(false);
-      if (u_savecommon(curbuf, 0, curbuf->b_ml.ml_line_count + 1, 0, true)
+      if (u_savecommon(curbuf, curwin->w_cursor, 0, curbuf->b_ml.ml_line_count + 1, 0, true)
           == FAIL) {
         xfree(new_name);
         goto theend;

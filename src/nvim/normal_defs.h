@@ -4,6 +4,7 @@
 
 #include "nvim/pos_defs.h"
 #include "nvim/types_defs.h"
+#include "nvim/vim_defs.h"
 
 /// Motion types, used for operators and for yank/delete registers.
 ///
@@ -40,6 +41,18 @@ typedef struct {
   int prev_opcount;        ///< ca.opcount saved for K_EVENT
   int prev_count0;         ///< ca.count0 saved for K_EVENT
   bool excl_tr_ws;         ///< exclude trailing whitespace for yank of a block
+
+  // modded:
+  Direction dir;
+
+  // The function nv_findpar moves charwise but the operation afterwards is
+  // linewise. The modifications to the linewise delete operation need to be
+  // disabled when this is active.
+  bool is_findpar_active;
+
+  // modded:
+  MotionType pasted_text_motion_type;
+  size_t pasted_text_line_count;
 } oparg_T;
 
 /// Arguments for Normal mode commands.

@@ -367,7 +367,7 @@ void nvim_buf_set_lines(uint64_t channel_id, Buffer buffer, Integer start, Integ
       goto end;
     }
 
-    if (u_save_buf(buf, (linenr_T)(start - 1), (linenr_T)end) == FAIL) {
+    if (u_save_buf(buf, curwin->w_cursor, (linenr_T)(start - 1), (linenr_T)end) == FAIL) {
       api_set_error(err, kErrorTypeException, "Failed to save undo information");
       goto end;
     }
@@ -600,7 +600,7 @@ void nvim_buf_set_text(uint64_t channel_id, Buffer buffer, Integer start_row, In
 
     // Small note about undo states: unlike set_lines, we want to save the
     // undo state of one past the end_row, since end_row is inclusive.
-    if (u_save_buf(buf, (linenr_T)start_row - 1, (linenr_T)end_row + 1) == FAIL) {
+    if (u_save_buf(buf, curwin->w_cursor, (linenr_T)start_row - 1, (linenr_T)end_row + 1) == FAIL) {
       api_set_error(err, kErrorTypeException, "Failed to save undo information");
       goto end;
     }

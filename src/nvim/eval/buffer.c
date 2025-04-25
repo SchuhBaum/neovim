@@ -193,7 +193,7 @@ static void set_buffer_lines(buf_T *buf, linenr_T lnum_arg, bool append, typval_
     if (!append && lnum <= curbuf->b_ml.ml_line_count) {
       // Existing line, replace it.
       int old_len = (int)strlen(ml_get(lnum));
-      if (u_savesub(lnum) == OK
+      if (u_savesub_internal(curwin->w_old_cursor, lnum) == OK // modded
           && ml_replace(lnum, line, true) == OK) {
         inserted_bytes(lnum, 0, old_len, (int)strlen(line));
         if (is_curbuf && lnum == curwin->w_cursor.lnum) {
@@ -201,7 +201,8 @@ static void set_buffer_lines(buf_T *buf, linenr_T lnum_arg, bool append, typval_
         }
         rettv->vval.v_number = 0;  // OK
       }
-    } else if (added > 0 || u_save(lnum - 1, lnum) == OK) {
+
+    } else if (added > 0 || u_save_internal(curwin->w_old_cursor, lnum - 1, lnum) == OK) { // modded
       // append the line.
       added++;
       if (ml_append(lnum - 1, line, 0, false) == OK) {

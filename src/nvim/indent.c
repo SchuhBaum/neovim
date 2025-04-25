@@ -707,6 +707,15 @@ bool set_indent(int size, int flags)
       changed_bytes(curwin->w_cursor.lnum, 0);
     }
 
+    // modded:
+    // TODO: There is this other case. It seems to be for when padding is added for
+    // tabs and stuff. I don't use them so ignore it for now.
+    // TODO: I might want to do this more generally in changed_bytes. But that
+    // one is not called all the time here. So it would need to go in the else case.
+    if (curwin->w_old_cursor.lnum == curwin->w_cursor.lnum && curwin->w_old_cursor.col >= old_offset) {
+        curwin->w_old_cursor.col += ind_len - old_offset;
+    }
+
     // Correct saved cursor position if it is in this line.
     if (saved_cursor.lnum == curwin->w_cursor.lnum) {
       if (saved_cursor.col >= old_offset) {

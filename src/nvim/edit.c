@@ -2517,11 +2517,16 @@ int oneright(void)
 
   int l = utfc_ptr2len(ptr);
 
+  // modded:
+  // Commented out. I try to make it the default that you can move to the NUL
+  // character at the end of the end. It does not work well with plugins at this
+  // time, unfortunately.
   // move "l" bytes right, but don't end up on the NUL, unless 'virtualedit'
   // contains "onemore".
-  if (ptr[l] == NUL && (get_ve_flags(curwin) & kOptVeFlagOnemore) == 0) {
-    return FAIL;
-  }
+  // if (ptr[l] == NUL && (get_ve_flags(curwin) & kOptVeFlagOnemore) == 0) {
+  //   return FAIL;
+  // }
+
   curwin->w_cursor.col += l;
 
   curwin->w_set_curswant = true;

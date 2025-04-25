@@ -108,6 +108,11 @@ static int coladvance2(win_T *wp, pos_T *pos, bool addspaces, bool finetune, col
                  || (VIsual_active && *p_sel != 'o')
                  || ((get_ve_flags(wp) & kOptVeFlagOnemore) && wcol < MAXCOL);
 
+  // modded:
+  // Does not work currently. Plugins (not sure which one(s)) undo this
+  // via calling `nvim_win_call()`. You need to run `nvim --clean`.
+  one_more = one_more || wcol < MAXCOL;
+
   char *line = ml_get_buf(wp->w_buffer, pos->lnum);
   int linelen = ml_get_buf_len(wp->w_buffer, pos->lnum);
 

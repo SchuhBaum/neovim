@@ -469,6 +469,21 @@ void changed_bytes(linenr_T lnum, colnr_T col)
 /// Like changed_bytes() but also adjust extmark for "new" bytes.
 void inserted_bytes(linenr_T lnum, colnr_T start_col, int old_col, int new_col)
 {
+  // modded:
+  // This is ugly. We want to place the cursor at the right position after all
+  // the action is done and the cursor is moved all over the place.
+  // But that does not mean that the cursor is supposed to be at the same
+  // position all the time. It is supposed to be steady. You want it to move
+  // only when text is pushed before the cursor.
+  // Besides that, there are cases where you don't know. Like this function gets
+  // called for replacing whole lines even when only some small part is changed.
+  // For example, in the `commentary.vim` you can add or remove `// ` to lines
+  // and it executes a userfunc (g@) that still replaces the whole line.
+  pos_T old_pos = curwin->w_old_cursor;
+  if (old_pos.lnum == lnum && old_pos.col >= start_col) {
+    curwin->w_old_cursor.col += new_col - old_col;
+  }
+
   if (curbuf_splice_pending == 0) {
     extmark_splice_cols(curbuf, (int)lnum - 1, start_col, old_col, new_col, kExtmarkUndo);
   }
@@ -1950,6 +1965,43 @@ void truncate_line(int fixpos)
   if (fixpos && curwin->w_cursor.col > 0) {
     curwin->w_cursor.col--;
   }
+}
+
+void del_lines_2(pos_T uh_cursor, linenr_T first, linenr_T nlines, bool undo)
+{
+  int n;
+  // linenr_T first = curwin->w_cursor.lnum;
+
+  if (nlines <= 0) {
+    return;
+  }
+
+  // save the deleted lines for undo
+  if (undo && u_savedel_internal(uh_cursor, curwin->w_cursor.lnum, nlines) == FAIL) {
+    return;
+  }
+
+  for (n = 0; n < nlines;) {
+    if (curbuf->b_ml.ml_flags & ML_EMPTY) {  // nothing to delete
+      break;
+    }
+
+    ml_delete(first, true);
+    n++;
+
+    // If we delete the last line in the file, stop
+    if (first > curbuf->b_ml.ml_line_count) {
+      break;
+    }
+  }
+
+  // Correct the cursor position before calling deleted_lines_mark(), it may
+  // trigger a callback to display the cursor.
+  curwin->w_cursor.col = 0;
+  check_cursor_lnum(curwin);
+
+  // adjust marks, mark the buffer as changed and prepare for displaying
+  deleted_lines_mark(first, n);
 }
 
 /// Delete "nlines" lines at the cursor.

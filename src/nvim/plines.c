@@ -471,6 +471,10 @@ int linesize_regular(CharsizeArg *const csarg, int vcol_arg, colnr_T const len)
 /// @see linesize_regular
 int linesize_fast(CharsizeArg const *const csarg, int vcol_arg, colnr_T const len)
 {
+  // TODO:
+  //   This function is very slow when you have long wrapped lines and move fast
+  //   (spam <c-d> for examples).
+  // LOG_CALLSTACK();
   win_T *const wp = csarg->win;
   bool const use_tabstop = csarg->use_tabstop;
 

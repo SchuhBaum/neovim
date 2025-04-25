@@ -1055,6 +1055,18 @@ struct window_S {
 
   pos_T w_cursor;                   ///< cursor position in buffer
 
+  // modded:
+  // The value w_curswant restores the column position when you only move down
+  // or up. It updates when you move left or right.
+  //
+  // Currently, there is only one such value and undo / redo cannot restore it.
+  // NO, it can restore it. But you don't have control. The save functions only
+  // have a pos_T argument. A different value than curwin->w_cursor for
+  // uh_cursor might need a different uh_curswant value as well.
+  //
+  // TODO: move w_curswant to pos_T??? maybe it is not needed..
+  pos_T w_old_cursor;
+
   colnr_T w_curswant;               ///< Column we want to be at.  This is
                                     ///< used to try to stay in the same column
                                     ///< for up/down cursor motions.

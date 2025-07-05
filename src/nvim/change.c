@@ -469,20 +469,67 @@ void changed_bytes(linenr_T lnum, colnr_T col)
 /// Like changed_bytes() but also adjust extmark for "new" bytes.
 void inserted_bytes(linenr_T lnum, colnr_T start_col, int old_col, int new_col)
 {
-  // modded:
-  // This is ugly. We want to place the cursor at the right position after all
-  // the action is done and the cursor is moved all over the place.
-  // But that does not mean that the cursor is supposed to be at the same
-  // position all the time. It is supposed to be steady. You want it to move
-  // only when text is pushed before the cursor.
-  // Besides that, there are cases where you don't know. Like this function gets
-  // called for replacing whole lines even when only some small part is changed.
-  // For example, in the `commentary.vim` you can add or remove `// ` to lines
-  // and it executes a userfunc (g@) that still replaces the whole line.
+  // START modded:
+  // This fixes a problem with `commentary.vim`. It adds `// ...` or `/* ... */`
+  // by replacing the whole line. It is not reliable to only look at
+  // start_col+old_col and start_col+new_col.
+  //
+  // Note that this does not handle replacing. Only adding or removing.
+
+  // Linux only..
+  // LOG_CALLSTACK();
+
   pos_T old_pos = curwin->w_old_cursor;
   if (old_pos.lnum == lnum && old_pos.col >= start_col) {
-    curwin->w_old_cursor.col += new_col - old_col;
+    u_header_T *b_u_newhead = curbuf->b_u_newhead;
+
+    if (b_u_newhead != NULL) {
+      u_entry_T *uh_entry = b_u_newhead->uh_entry;
+
+      if (uh_entry != NULL && uh_entry->ue_size > 0) {
+        char *prev_line = uh_entry->ue_array[0];
+        char *cur_line = ml_get_buf(curbuf, lnum);
+        size_t prev_len = strlen(prev_line);
+        size_t cur_len = (size_t)ml_get_buf_len(curbuf, lnum);
+
+        if (prev_len != cur_len) {
+          colnr_T prev_off = 0;
+          colnr_T cur_off = 0;
+          colnr_T count = 0;
+          colnr_T i = 0;
+
+          while (prev_off+i <= old_pos.col) {
+            char prev_char = prev_line[prev_off+i];
+            if (prev_char == '\0')
+              break;
+
+            char cur_char = cur_line[cur_off+i];
+            if (cur_char == '\0')
+              break;
+
+            if (prev_char == cur_char) {
+              ++i;
+              continue;
+            }
+
+            if (prev_len > cur_len) {
+              ++prev_off;
+              --count;
+            } else {
+              ++cur_off;
+              ++count;
+            }
+
+            // WLOG("TEMP: compare %d %d %d %d", i, count, prev_len, cur_len);
+          }
+
+          curwin->w_old_cursor.col += count;
+        }
+      }
+    }
   }
+
+  // END modded
 
   if (curbuf_splice_pending == 0) {
     extmark_splice_cols(curbuf, (int)lnum - 1, start_col, old_col, new_col, kExtmarkUndo);
